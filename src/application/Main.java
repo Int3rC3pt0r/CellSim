@@ -2,55 +2,73 @@ package application;
 	
 import javafx.animation.AnimationTimer;
 import javafx.application.Application;
-import javafx.beans.value.ChangeListener;
-import javafx.beans.value.ObservableValue;
-import javafx.event.ActionEvent;
-import javafx.event.EventHandler;
 import javafx.scene.Scene;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.control.*;
-import javafx.scene.input.KeyCode;
-import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseEvent;
-import javafx.scene.input.ScrollEvent;
 import javafx.scene.layout.BorderPane;
-import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
-import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
-import javafx.scene.text.Font;
 import javafx.stage.Stage;
-import javafx.util.converter.PercentageStringConverter;
 
 
 public class Main extends Application {
 	
-	static double width = 800;
-	static double height = 800;
-	static int fSizeX = 50;
-	static int fSizeY = 50;
+	static double width = 900;
+	static double height = 900;
+	static int fSizeX = 90;
+	static int fSizeY = 90;
 	static boolean[][] cell;
+	static boolean[][] cellSave1;
 	static int[][] neighbours;
 	static boolean rand = true;
+	static boolean running = false;
+	static boolean editMode = false;
 	
-	Button fill, next, genField;
-	static TextField percentage;
+	Button fill, next, genField, boarderChange, edit, save, load;
 	Canvas canvas;
+	static TextField percentage;
+	static Slider animTime;
+	static Label animTimeValue;
+	Label lastAct;
 	
 	
 	@Override
 	public void start(Stage primaryStage) {
 		try {
 			
-			fill = new Button("Fill");
-			next = new Button("Next");
+			fill = new Button("PrintNeighbours");
+			next = new Button("Start");
 			genField = new Button("genField");
+			animTime = new Slider(1, 100, 1);
+			animTimeValue = new Label("1");
+			lastAct = new Label("\tNo last Action, please generate a Field");
+			boarderChange = new Button("Change boarder to Dead");
+			edit = new Button("Edit");
+			save = new Button("Save");
+			load = new Button("Load");
+			
 			
 			percentage = new TextField("20");
 			
 			canvas = new Canvas(width,height);
 			GraphicsContext gc = canvas.getGraphicsContext2D();
+			
+			canvas.addEventFilter(MouseEvent.MOUSE_CLICKED, e -> {
+				if(editMode) {
+					cell[(int)(e.getX()/(width/fSizeX))][(int)(e.getY()/(height/fSizeY))] = !cell[(int)(e.getX()/(width/fSizeX))][(int)(e.getY()/(height/fSizeY))];
+				}
+			});
+			canvas.addEventFilter(MouseEvent.MOUSE_MOVED, e -> {
+				if(editMode) {
+					fillWhite(gc);
+					showField(gc);
+					Color col = new Color(0,0.7,0,0.5);
+					fillRect(gc,(int)(e.getX()/(width/fSizeX)),(int)(e.getY()/(height/fSizeY)), col);
+					genGrid(gc);
+				}
+			});
 			
 			genField.addEventFilter(MouseEvent.MOUSE_CLICKED, e -> {
 				fillWhite(gc);
@@ -58,27 +76,84 @@ public class Main extends Application {
 				rdmField();
 				showField(gc);
 				genGrid(gc);
+				lastAct.setText("\tField generated");
 			});
 			
 			next.addEventFilter(MouseEvent.MOUSE_CLICKED, e -> {
-				fillCellNeighbours();
-				updateCells();
-				fillWhite(gc);
-				showField(gc);
-				genGrid(gc);
+				running = !running;
+				if(running) {
+					next.setText("Stop");
+					lastAct.setText("\tSimulation started");
+				}
+				else {
+					next.setText("Start");
+					lastAct.setText("\tSimulation stopped");
+				}
+			});
+			
+			boarderChange.addEventFilter(MouseEvent.MOUSE_CLICKED, e -> {
+				rand = !rand;
+				if(rand) {
+					boarderChange.setText("Change boarder to Dead");
+				}
+				else {
+					boarderChange.setText("Change boarder to Living");
+				}
 			});
 			
 			fill.addEventFilter(MouseEvent.MOUSE_CLICKED, e -> {
 				fillCellNeighbours();
 				printNeighbours(neighbours);
 			});
+			edit.addEventFilter(MouseEvent.MOUSE_CLICKED, e -> {
+				editMode = !editMode;
+				if(editMode) {
+					lastAct.setText("\tEdit Mode enabled");
+				}
+				else {
+					lastAct.setText("\tEdit Mode disabled");
+				}
+			});
+			save.addEventFilter(MouseEvent.MOUSE_CLICKED, e -> {
+				cellSave1 = cell;
+				lastAct.setText("\tCurrent cell-positions saved");
+			});
+			load.addEventFilter(MouseEvent.MOUSE_CLICKED, e -> {
+				cell = cellSave1;
+				lastAct.setText("\tLoaded saved cell-positions");
+				fillWhite(gc);
+				showField(gc);
+				genGrid(gc);
+			});
+			
 			
 			HBox top = new HBox();
-			top.getChildren().addAll(genField, percentage, fill, next);
+			top.getChildren().addAll(genField, percentage, next, boarderChange, edit, save, load);
+			
+			HBox bot = new HBox();
+			bot.getChildren().addAll(animTime, animTimeValue, lastAct);
 			
 			BorderPane root = new BorderPane();
 			root.setTop(top);
 			root.setCenter(canvas);
+			root.setBottom(bot);
+			
+			new AnimationTimer() {
+				long lastTick = 0;
+
+				public void handle(long now) {
+					if (now - lastTick > 1000000000/Double.parseDouble(animTimeValue.getText()) && running) {
+						lastTick = now;
+						fillCellNeighbours();
+						updateCells();
+						fillWhite(gc);
+						showField(gc);
+						genGrid(gc);
+						updateSlider();
+					}
+				}
+
+			}.start();
 			
 			Scene scene = new Scene(root,width,height+50);
 			scene.getStylesheets().add(getClass().getResource("application.css").toExternalForm());
@@ -96,11 +171,9 @@ public class Main extends Application {
 	private static void initiateField(GraphicsContext gc) {
 		cell = new boolean[fSizeX][fSizeY];
 		neighbours = new int[fSizeX][fSizeY];
-		System.out.println("initiateField");
 	}
 	
 	private static void genGrid(GraphicsContext gc) {
-		System.out.println("genGrid");
 		gc.setStroke(Color.BLACK);
 		gc.setFill(Color.BLACK);
 		gc.setLineWidth(1);
@@ -114,17 +187,16 @@ public class Main extends Application {
 		}
 	}
 	
-	private static void fillRect(GraphicsContext gc, int x, int y){
-		gc.setFill(Color.LAWNGREEN);
+	private static void fillRect(GraphicsContext gc, int x, int y, Color col){
+		gc.setFill(col);
 		gc.fillRect(width/fSizeX*x, height/fSizeY*y, width/fSizeX, height/fSizeY);
 	}
 	
 	private static void rdmField() {
-		System.out.println("rdmField");
 		for (int i = 0; i < cell.length; i++) {
-			for (int j = 0; j < cell.length; j++) {
+			for (int j = 0; j < cell[0].length; j++) {
 				int r = (int) (Math.random() * 101);
-				if(r <= Integer.parseInt(percentage.getText())) {
+				if(r <= Integer.parseInt(percentage.getText()) && Integer.parseInt(percentage.getText()) != 0) {
 					cell[i][j] = true;
 				}
 				else {
@@ -135,11 +207,10 @@ public class Main extends Application {
 	}
 	
 	private static void showField(GraphicsContext gc) {
-		System.out.println("showField");
 		for (int i = 0; i < cell.length; i++) {
-			for (int j = 0; j < cell.length; j++) {
+			for (int j = 0; j < cell[0].length; j++) {
 				if(cell[i][j] == true) {
-					fillRect(gc,i,j);
+					fillRect(gc,i,j, Color.LAWNGREEN);
 				}
 			}
 		}
@@ -179,7 +250,7 @@ public class Main extends Application {
 	
 	private static void updateCells() {
 		for (int i = 0; i < cell.length; i++) {
-			for (int j = 0; j < cell.length; j++) {
+			for (int j = 0; j < cell[0].length; j++) {
 				if(neighbours[i][j] == 3) {
 					cell[i][j] = true;
 				}
@@ -198,6 +269,11 @@ public class Main extends Application {
 			System.out.println();
 		}
 	}
+	
+	private static void updateSlider() {
+		animTimeValue.setText(""+animTime.getValue());
+	}
+	
 	
 	public static void main(String[] args) {
 		launch(args);
